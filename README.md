@@ -232,7 +232,6 @@ If you use HACS, add this GitHub repository as a custom repository:
 3. Add the repository and download **Resideo Native**.
 4. Restart Home Assistant and add the integration under **Settings → Devices & services**.
 
-Use the custom-repository installation until HACS maintainers approve inclusion in the default catalog. See the [HACS custom repository guide](https://www.hacs.xyz/docs/faq/custom_repositories/) for help.
 
 ## Sign-in
 
