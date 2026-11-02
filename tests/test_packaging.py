@@ -23,7 +23,7 @@ class PackagingTests(unittest.TestCase):
             (ROOT / "custom_components/resideo_native/manifest.json").read_text()
         )
         self.assertEqual(data["domain"], "resideo_native")
-        self.assertEqual(data["version"], "0.3.1")
+        self.assertEqual(data["version"], "0.3.2")
         self.assertEqual(data["dependencies"], ["climate", "sensor", "switch", "water_heater"])
 
     def test_hacs_metadata(self):

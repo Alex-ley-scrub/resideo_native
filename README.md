@@ -10,7 +10,7 @@ This is an independent community integration for the legacy Resideo / Honeywell 
 
 > **Hardware-tested write controls:** The maintainer confirms successful thermostat operation using this Home Assistant integration on a physical **Honeywell Home Lyric T6 Pro** thermostat (internally reported as **Jasper** by Home Assistant), including HVAC mode, target temperature and hold/preset commands. The owner reports **firmware 6.0.1.50** from the physical thermostat; Home Assistant separately reports the internal model as `Jasper` and leaves `sw_version` blank. This confirmation is limited to the actual device tested; other model/firmware combinations remain unverified. Offline packaging checks cannot independently prove physical command acceptance. See [VALIDATION.md](VALIDATION.md).
 
-**Quick links:** [Installation](#installation) · [Schedule editor](#schedule-entities-and-editor-031) · [Testing evidence](docs/TESTING_2026-10-27.md) · [Updating](#updating) · [Troubleshooting](#troubleshooting)
+**Quick links:** [Installation](#installation) · [Schedule editor](#schedule-entities-and-editor-032) · [Testing evidence](docs/TESTING_2026-10-27.md) · [Updating](#updating) · [Troubleshooting](#troubleshooting)
 
 ## Compatibility
 
@@ -29,6 +29,7 @@ The integration is based on the protocol used by Resideo Smart Home Android **6.
 
 - One `climate` entity per supported thermostat.
 - Jasper/T6R domestic hot water: reported on/off state, follow schedule, always on/off, and 30/60/90-minute boost controls when a nested `dhwZone` is present.
+- Bounded follow-up reads after hot-water commands, stopping when a fresh cloud response confirms the requested mode.
 - Current temperature, target temperature, and device-reported temperature limits.
 - Celsius/Fahrenheit handling, including the Jasper/T6 API conversion corrected in version 0.1.2.
 - Heating, cooling, off, and automatic heat/cool modes when reported by the device. Heating-only models are not given cooling controls.
@@ -41,7 +42,35 @@ The integration is based on the protocol used by Resideo Smart Home Android **6.
 - Read/edit heating and DHW cloud schedules through response actions or the visual editor, with backups, revision checks and bounded readback.
 - Visible schedule On/Off, Geofencing setup and optional sidebar controls on supported thermostat devices.
 
-## Schedule entities and editor (0.3.1)
+## Command readback (0.3.2)
+
+Resideo can accept a hot-water command before its account response shows the
+new mode. After the immediate refresh, the integration waits 5 seconds before
+reading again, then 10 seconds, then 15 seconds if still needed. With short
+requests these reads occur roughly 5, 15 and 30 seconds after the immediate
+read. The loop stops as soon as a successful fresh response confirms a known
+mode on an online zone. It repeats GETs only; the command is sent once.
+
+Heating commands retain their single immediate refresh. The configured account
+poll interval and the once-per-minute schedule-mode reads remain unchanged.
+An accepted newer command replaces verification for that hot-water zone only;
+another zone's commands do not cancel it. A normal poll can also provide the
+confirmation and avoid an extra GET. Each hot-water command adds at most three
+follow-up account reads; account unload cancels pending verification.
+
+Failed or pre-command responses cannot confirm success. Rate limiting and
+reauthentication stop follow-up reads, leaving the existing client cooldown
+and reauthentication flows in charge. Ordinary transient failures still use
+the bounded remaining GET attempts. No optimistic state is published. If the
+cloud never confirms, the last reported state remains and normal polling
+continues. This change addresses delayed post-command updates; it does not
+change the integration's availability policy after a failed poll.
+
+Based on [Alex-ley-scrub's contribution, PR #6](https://github.com/Kosztyk/resideo_native/pull/6),
+with fresh-response checks, per-zone cancellation and lifecycle regressions.
+See [release notes](RELEASE_NOTES_0.3.2.md) and [validation](VALIDATION.md).
+
+## Schedule entities and editor (0.3.2)
 
 Open **Settings → Devices & services → Resideo Native → your thermostat**.
 
@@ -76,7 +105,7 @@ Readback checks day coverage as well as times and temperature. See
 [the protocol investigation](docs/SLEEP_PROTOCOL.md).
 
 Replace the complete integration folder, restart HA and refresh the browser.
-Confirm **Editor 0.3.1**. The editor entity, Configure options and optional sidebar
+Confirm **Editor 0.3.2**. The editor entity, Configure options and optional sidebar
 remain available. Sidebar-only changes preserve poll/default-hold values and do
 not reload thermostat controls; thermostats sharing an account show one preference.
 
@@ -232,6 +261,7 @@ If you use HACS, add this GitHub repository as a custom repository:
 3. Add the repository and download **Resideo Native**.
 4. Restart Home Assistant and add the integration under **Settings → Devices & services**.
 
+Use the custom-repository installation until HACS maintainers approve inclusion in the default catalog. See the [HACS custom repository guide](https://www.hacs.xyz/docs/faq/custom_repositories/) for help.
 
 ## Sign-in
 

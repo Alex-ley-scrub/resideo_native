@@ -1,8 +1,10 @@
 # Resideo Native — publication and HACS checks
 
-The authorized release is **v0.3.1**. Its source is the supplied, tested 0.3.1
-archive plus the final documentation/evidence and publication-workflow updates.
+The prepared version is **v0.3.2**. Its integration is based on the supplied
+0.3.1 archive plus PR #6's bounded command readback and the reviewed corrections.
 The integration version, frontend asset version and package metadata agree.
+This local package has not been pushed, tagged or released on GitHub.
+The steps below describe a later publication, not an already completed one.
 
 1. Run repository packaging, Python/HA, JavaScript and browser checks.
 2. Push the reviewed source to main. The Validate Resideo Native workflow runs
@@ -10,9 +12,9 @@ The integration version, frontend asset version and package metadata agree.
    There are no HACS ignores or disabled checks.
 3. Publication is gated on a successful push validation of the current main
    commit. A stale commit is skipped. The release workflow is restricted to the
-   authorized 0.3.1 version and never replaces an existing release.
-4. The workflow creates the v0.3.1 tag/full GitHub Release from that exact commit,
-   uses RELEASE_NOTES_0.3.1.md, and attaches a source ZIP plus SHA256. Its release
+   authorized 0.3.2 version and never replaces an existing release.
+4. The workflow creates the v0.3.2 tag/full GitHub Release from that exact commit,
+   uses RELEASE_NOTES_0.3.2.md, and attaches a source ZIP plus SHA256. Its release
    body links the successful validation run and commit.
 5. Verify the release tag, commit, assets and completed HACS/Hassfest jobs. HACS
    downloads the integration from the normal repository release source;

@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Any
 
 import probatio
-
 from homeassistant.components.water_heater import (
     WaterHeaterEntity,
     WaterHeaterEntityFeature,
@@ -17,10 +16,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .coordinator import ResideoCoordinator
-from .schedule_entity import ScheduleEntityMixin, register_schedule_actions
+from .coordinator import CommandConfirmation, ResideoCoordinator
 from .dhw_entity import ResideoHotWaterEntity
+from .protocol import Thermostat
 from .protocol.hot_water import DHW_BOOST_MINUTES, DHW_MODES
+from .schedule_entity import ScheduleEntityMixin, register_schedule_actions
 
 
 def _boost_duration(value: Any) -> int:
@@ -109,6 +109,7 @@ class ResideoHotWater(ScheduleEntityMixin, ResideoHotWaterEntity, WaterHeaterEnt
         await self.coordinator.async_command(
             self.coordinator.client.set_hot_water_mode(self.device_id, operation_mode),
             self._shows(lambda mode: mode == operation_mode),
+            read_back_key=f"hot_water:{self.device_id}",
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -121,19 +122,27 @@ class ResideoHotWater(ScheduleEntityMixin, ResideoHotWaterEntity, WaterHeaterEnt
         await self.coordinator.async_command(
             self.coordinator.client.boost_hot_water(self.device_id, duration),
             self._shows(lambda mode: mode == "boost"),
+            read_back_key=f"hot_water:{self.device_id}",
         )
 
     async def async_cancel_hot_water_boost(self) -> None:
         await self.coordinator.async_command(
             self.coordinator.client.cancel_hot_water_boost(self.device_id),
-            self._shows(lambda mode: mode != "boost"),
+            self._shows(lambda mode: mode in ("auto", "on", "off")),
+            read_back_key=f"hot_water:{self.device_id}",
         )
 
-    def _shows(self, want: Callable[[str | None], bool]):
-        """Whether polled data shows this zone in the wanted operating mode."""
+    def _shows(self, want: Callable[[str], bool]) -> CommandConfirmation:
+        """Confirm only a known operating mode from an online DHW zone."""
 
-        def confirmed(data: dict[str, Any]) -> bool:
+        def confirmed(data: dict[str, Thermostat]) -> bool:
             device = data.get(self.device_id)
-            return bool(device and device.hot_water and want(device.hot_water.operation_mode))
+            zone = device.hot_water if device else None
+            return bool(
+                zone
+                and zone.online
+                and zone.operation_mode in DHW_MODES
+                and want(zone.operation_mode)
+            )
 
         return confirmed

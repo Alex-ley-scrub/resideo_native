@@ -1,6 +1,6 @@
-/* Resideo Native 0.3.1. Local UI; all account access stays in HA. */
+/* Resideo Native 0.3.2. Local UI; all account access stays in HA. */
 export const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-export const EDITOR_VERSION = "0.3.1";
+export const EDITOR_VERSION = "0.3.2";
 export const PANEL_ELEMENT = `resideo-schedule-panel-${EDITOR_VERSION.replaceAll(".", "-")}`;
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));

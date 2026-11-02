@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.2 — Confirm hot-water modes after delayed cloud updates
+
+- Incorporate the bounded command readback proposed by Alex-ley-scrub in
+  [PR #6](https://github.com/Kosztyk/resideo_native/pull/6): one immediate read,
+  then up to three GETs separated by 5, 10 and 15 seconds, stopping on confirmation.
+- Keep commands without a confirmation check, including heating temperature,
+  HVAC mode and hold commands, at one immediate refresh.
+- Track hot-water verification separately per device. Supersede only the same
+  zone's accepted command, protect against out-of-order service completion and
+  cancel tasks on account unload/reload.
+- Require a successful response from a request started after the command,
+  plus a known mode on an online DHW zone. Unknown mode cannot confirm boost
+  cancellation; failed reads cannot reuse stale data as proof of success.
+- Reuse confirmation supplied by a normal poll; stop extra reads on rate
+  limiting or reauthentication. Never repeat the write.
+- Update integration/editor versions, release metadata, documentation and the
+  HA regression suite. The configured account and schedule polling intervals,
+  availability behavior, and schedule protocol remain as in 0.3.1.
+- Built from the supplied 0.3.1 integration. Local package only; no GitHub
+  publication or live heating commands were performed for this build.
+
 ## 0.3.1 — Cloud schedules, visual editor and verified Jasper/DHW results
 
 First published release after 0.1.8, consolidating the local schedule builds

@@ -9,21 +9,26 @@ from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import callback
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL, NAME
-from .protocol import AuthenticationError, NativeClient, ResideoError, Thermostat
+from .protocol import (
+    AuthenticationError,
+    NativeClient,
+    RateLimited,
+    ResideoError,
+    Thermostat,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-# The cloud reports a command's result some seconds after the thermostat acts on
-# it (about 10-15 s for hot water), so the read-back straight after a command
-# usually still shows the old state. Read back again this many seconds apart
-# (5, 15 and 30 s after the command) instead of waiting for the next poll.
+# Resideo can accept a command before its account response shows the change.
+# Wait 5, then 10, then 15 seconds between follow-up reads (roughly 5/15/30
+# seconds after the immediate read). Only GETs are repeated, never commands.
 READ_BACK_DELAYS = (5, 10, 15)
+CommandConfirmation = Callable[[dict[str, Thermostat]], bool]
 
 
 class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
@@ -31,7 +36,11 @@ class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
         self.client = client
         self.schedule_modes: dict[str, str] = {}
         self.configured_options = dict(entry.options)
-        self._read_back: asyncio.Task | None = None
+        self._read_back_tasks: dict[str, asyncio.Task[None]] = {}
+        self._read_back_requests: dict[str, object] = {}
+        self._read_back_closed = False
+        self._refresh_generation = 0
+        self._successful_refresh_generation = 0
         interval = int(entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL))
         super().__init__(
             hass,
@@ -40,6 +49,7 @@ class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
             name=NAME,
             update_interval=timedelta(seconds=max(30, min(600, interval))),
         )
+        entry.async_on_unload(self._async_cancel_read_backs)
 
     @callback
     def async_note_schedule(self, device_id, result):
@@ -53,22 +63,28 @@ class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
             self.async_update_listeners()
 
     async def _async_update_data(self) -> dict[str, Thermostat]:
+        self._refresh_generation += 1
+        generation = self._refresh_generation
         try:
-            return await self.client.update()
+            data = await self.client.update()
         except AuthenticationError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except ResideoError as err:
             raise UpdateFailed(str(err)) from err
+        self._successful_refresh_generation = generation
+        return data
 
     async def async_command(
         self,
         command: Coroutine[Any, Any, None],
-        confirmed: Callable[[dict[str, Thermostat]], bool] | None = None,
+        confirmed: CommandConfirmation | None = None,
+        *,
+        read_back_key: str = "command",
     ) -> None:
-        """Send a command, then read back until the server reports it.
+        """Send once, then optionally wait for a fresh cloud confirmation.
 
-        confirmed says whether polled data shows the command's result; without
-        it every READ_BACK_DELAYS read-back is made.
+        Commands without a confirmation keep their single immediate refresh.
+        A newer accepted command replaces verification only for the same key.
         """
         try:
             await command
@@ -78,22 +94,101 @@ class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
             raise HomeAssistantError("Sign in to Resideo again") from err
         except ResideoError as err:
             raise HomeAssistantError(str(err)) from err
-        # Read back from the server instead of inventing an optimistic state.
-        await self.async_request_refresh()
-        if self._read_back:
-            self._read_back.cancel()
-        if confirmed and self.data and confirmed(self.data):
-            return
-        if self.config_entry:
-            self._read_back = self.config_entry.async_create_background_task(
-                self.hass, self._async_read_back(confirmed), f"{NAME} command read-back"
-            )
+        marker = None
+        minimum_generation = self._refresh_generation + 1
+        if confirmed is not None:
+            # Register before awaiting the refresh: a newer command can finish
+            # while this command's refresh is still queued by HA's debouncer.
+            marker = object()
+            self._read_back_requests[read_back_key] = marker
+            if previous := self._read_back_tasks.pop(read_back_key, None):
+                previous.cancel()
+        try:
+            # Read back from the server instead of inventing an optimistic state.
+            await self.async_request_refresh()
+            if confirmed is None:
+                return
+            if (
+                self._read_back_closed
+                or self._read_back_requests.get(read_back_key) is not marker
+                or self._read_back_confirmed(confirmed, minimum_generation)
+                or self._read_back_terminal_error(minimum_generation)
+            ):
+                return
+            if self.config_entry:
+                self._read_back_tasks[read_back_key] = (
+                    self.config_entry.async_create_background_task(
+                        self.hass,
+                        self._async_read_back(
+                            read_back_key, marker, confirmed, minimum_generation
+                        ),
+                        f"{NAME} command read-back",
+                        eager_start=False,
+                    )
+                )
+        finally:
+            if (
+                marker is not None
+                and self._read_back_requests.get(read_back_key) is marker
+                and read_back_key not in self._read_back_tasks
+            ):
+                self._read_back_requests.pop(read_back_key, None)
+
+    def _read_back_confirmed(
+        self, confirmed: CommandConfirmation, minimum_generation: int
+    ) -> bool:
+        # A failed/debounced refresh retains self.data. A request which started
+        # before the command also cannot confirm that command's result.
+        return bool(
+            self.last_update_success
+            and self._successful_refresh_generation >= minimum_generation
+            and self.data
+            and confirmed(self.data)
+        )
+
+    def _read_back_terminal_error(self, minimum_generation: int) -> bool:
+        if self.last_update_success or self._refresh_generation < minimum_generation:
+            return False
+        error = self.last_exception
+        return isinstance(error, ConfigEntryAuthFailed) or isinstance(
+            getattr(error, "__cause__", None), (AuthenticationError, RateLimited)
+        )
 
     async def _async_read_back(
-        self, confirmed: Callable[[dict[str, Thermostat]], bool] | None
+        self,
+        key: str,
+        marker: object,
+        confirmed: CommandConfirmation,
+        minimum_generation: int,
     ) -> None:
-        for delay in READ_BACK_DELAYS:
-            await asyncio.sleep(delay)
-            await self.async_refresh()
-            if confirmed and self.data and confirmed(self.data):
-                return
+        try:
+            for delay in READ_BACK_DELAYS:
+                await asyncio.sleep(delay)
+                if self._read_back_requests.get(key) is not marker:
+                    return
+                # A normal account poll or another zone's command may already
+                # have provided fresh confirmation; do not issue another GET.
+                if self._read_back_confirmed(confirmed, minimum_generation):
+                    return
+                if self._read_back_terminal_error(minimum_generation):
+                    return
+                await self.async_refresh()
+                if self._read_back_confirmed(confirmed, minimum_generation):
+                    return
+                if self._read_back_terminal_error(minimum_generation):
+                    return
+            _LOGGER.debug("Command read-back ended without cloud confirmation")
+        finally:
+            if self._read_back_requests.get(key) is marker:
+                self._read_back_requests.pop(key, None)
+            if self._read_back_tasks.get(key) is asyncio.current_task():
+                self._read_back_tasks.pop(key, None)
+
+    @callback
+    def _async_cancel_read_backs(self) -> None:
+        """Stop verification when the account is unloaded or reloaded."""
+        self._read_back_closed = True
+        self._read_back_requests.clear()
+        for task in self._read_back_tasks.values():
+            task.cancel()
+        self._read_back_tasks.clear()

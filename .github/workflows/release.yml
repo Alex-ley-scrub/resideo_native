@@ -1,4 +1,4 @@
-name: Publish Resideo Native v0.3.1
+name: Publish Resideo Native v0.3.2
 
 on:
   workflow_run:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-resideo-native-0.3.1
+  group: publish-resideo-native-0.3.2
   cancel-in-progress: false
 
 jobs:
@@ -41,8 +41,8 @@ jobs:
             exit 0
           fi
           VERSION="$(python -c 'import json; print(json.load(open("custom_components/resideo_native/manifest.json"))["version"])')"
-          if [[ "$VERSION" != "0.3.1" ]]; then
-            echo "Auto-publishing is restricted to the authorized v0.3.1 release."
+          if [[ "$VERSION" != "0.3.2" ]]; then
+            echo "Auto-publishing is restricted to the authorized v0.3.2 release."
             exit 0
           fi
           if gh release view "v$VERSION" >/dev/null 2>&1; then

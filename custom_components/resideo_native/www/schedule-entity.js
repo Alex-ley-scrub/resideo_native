@@ -37,14 +37,14 @@ export async function openScheduleModeDialog(hass, url, mode) {
   const header=document.createElement("div");Object.assign(header.style,{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"16px",marginBottom:"16px"});
   const title=document.createElement("h2");title.textContent=mode==="Geofence"?"Geofencing setup":"Timed schedule setup";Object.assign(title.style,{font:"600 22px system-ui",margin:"0"});
   const cancel=document.createElement("button");cancel.textContent="Cancel";Object.assign(cancel.style,{font:"inherit",padding:"9px 16px",borderRadius:"10px",border:"1px solid #ccc",background:surface,color:"inherit",cursor:"pointer"});
-  const caption=document.createElement("p");caption.textContent=(hass.states?.[entity]?.attributes?.friendly_name || entity)+" · Editor 0.3.1";Object.assign(caption.style,{font:"13px system-ui",margin:"4px 0 0",color:"var(--secondary-text-color)"});
+  const caption=document.createElement("p");caption.textContent=(hass.states?.[entity]?.attributes?.friendly_name || entity)+" · Editor 0.3.2";Object.assign(caption.style,{font:"13px system-ui",margin:"4px 0 0",color:"var(--secondary-text-color)"});
   const heading=document.createElement("div");heading.append(title,caption);
   header.append(heading,cancel);dialog.append(style,header);document.body.append(dialog);
   let editor;
   const close=()=>{if(editor && !editor.canClose)return;dialog.close();dialog.remove();if(activeDialog===dialog)activeDialog=null;};
   cancel.addEventListener("click",close);dialog.addEventListener("cancel",event=>{event.preventDefault();close();});dialog.showModal();
   try {
-    const {PANEL_ELEMENT}=await import("./schedule-editor-0.3.1.js");
+    const {PANEL_ELEMENT}=await import("./schedule-editor-0.3.2.js");
     if(!dialog.isConnected)return;
     editor=document.createElement(PANEL_ELEMENT);editor.setConfig({dialog:true,entity,config_entry:entry,mode});editor.hass=hass;
     editor.addEventListener("resideo-mode-saved",()=>{dialog.close();dialog.remove();activeDialog=null;});dialog.append(editor);

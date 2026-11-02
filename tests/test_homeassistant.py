@@ -212,7 +212,7 @@ async def test_diagnostics_omit_all_account_material(hass, entry):
 
     text = json.dumps(await async_get_config_entry_diagnostics(hass, entry))
     data = json.loads(text)
-    assert data["integration_version"] == "0.3.1"
+    assert data["integration_version"] == "0.3.2"
     assert data["thermostats"][0]["units"] == "Celsius"
     assert data["thermostats"][0]["api_temperature_units"] == "Fahrenheit"
     for secret in (

@@ -1,4 +1,44 @@
-# Validation — Resideo Native 0.3.1
+# Validation — Resideo Native 0.3.2
+
+## Current build — 2 November 2026
+
+The uploaded `resideo_native.zip` reports version 0.3.1. Every non-cache
+integration file was compared byte for byte with the v0.3.1 tag
+(`12f6a39a14cdb50746aff1e2d30ff94203de951e`) and matched. That upload is the
+runtime baseline for this build. Repository tests and historical documentation
+come from the same tag.
+
+The command-readback idea and original three regressions come from
+[Alex-ley-scrub's PR #6](https://github.com/Kosztyk/resideo_native/pull/6),
+head `fbb22945450843ed2f522a84501379275595fc27`. Corrections keep heating commands
+at one refresh, track independent hot-water zones, guard out-of-order service
+completion, cancel on unload, require successful post-command reads and reject
+offline/unknown modes as confirmation. Rate limits and authentication failures
+stop follow-up GETs. No command is replayed.
+
+The new tests run against real Home Assistant 2026.10.2 / Python 3.14.8 with
+synthetic devices and responses. They cover early success, delayed success,
+bounded failure, heating request counts, rapid commands, two DHW zones,
+transient failures, rate limiting, reauthentication, unknown/offline states,
+pre-command in-flight reads, unloading and confirmation by a normal poll.
+
+Current automated results are recorded in [the release notes](RELEASE_NOTES_0.3.2.md).
+The completed local runs passed 252 Python/HA tests and 55 subtests, 36
+JavaScript tests and 49 Chromium browser checks, plus packaging, compilation
+and lint checks for the changed modules. The existing 29 restricted IPv6
+loopback warnings remain. Browser checks used Chromium Headless Shell
+141.0.7390.37 through the existing executable override because the pinned
+browser download returned an invalid archive. No project dependency was changed.
+No new live hardware commands, Home Assistant deployment or restart were
+performed. The contributor's reported hardware timing is evidence for their
+original PR build, not an independent hardware test of this corrected package.
+The existing availability policy and polling intervals are unchanged.
+
+HACS/Hassfest remote checks remain part of the included validation workflow;
+local packaging checks alone are not a claim that those remote jobs passed.
+This build has not been pushed or released on GitHub.
+
+## Historical v0.3.1 baseline evidence
 
 This release consolidates the schedule work developed on **27 October 2026**.
 The runtime comes from the supplied `resideo-native-0.3.1-sleep-payload-fix.zip`.
@@ -58,7 +98,7 @@ See [the APK trace](docs/SLEEP_PROTOCOL.md).
 [Validate Resideo Native](https://github.com/Kosztyk/resideo_native/actions/workflows/validate.yml)
 runs five independent jobs: packaging/Python compilation, the Python/HA suite,
 JavaScript/browser checks, **HACS Validation** and **Hassfest Validation**.
-No HACS checks are ignored. The release workflow publishes v0.3.1 only when all
+No HACS checks are ignored. The release workflow publishes v0.3.2 only when all
 jobs succeed on a push to the current main commit. Its release body records the
 exact validated commit and workflow-run link. The CI checks on that commit are
 the authoritative remote result, rather than a local packaging check alone.

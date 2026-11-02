@@ -42,8 +42,8 @@ def inspect_repository(root: Path = ROOT) -> list[str]:
                 errors.append(f"Manifest fields missing: {', '.join(sorted(absent))}")
             if manifest.get("domain") != DOMAIN:
                 errors.append("Manifest domain mismatch")
-            if manifest.get("version") != "0.3.1":
-                errors.append("Expected release version 0.3.1")
+            if manifest.get("version") != "0.3.2":
+                errors.append("Expected release version 0.3.2")
             if not manifest.get("codeowners"):
                 errors.append("Missing codeowner")
             expected_order = ["domain", "name"] + sorted(
