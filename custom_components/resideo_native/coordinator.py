@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from typing import Any
 
@@ -18,12 +19,19 @@ from .protocol import AuthenticationError, NativeClient, ResideoError, Thermosta
 
 _LOGGER = logging.getLogger(__name__)
 
+# The cloud reports a command's result some seconds after the thermostat acts on
+# it (about 10-15 s for hot water), so the read-back straight after a command
+# usually still shows the old state. Read back again this many seconds apart
+# (5, 15 and 30 s after the command) instead of waiting for the next poll.
+READ_BACK_DELAYS = (5, 10, 15)
+
 
 class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, client: NativeClient) -> None:
         self.client = client
         self.schedule_modes: dict[str, str] = {}
         self.configured_options = dict(entry.options)
+        self._read_back: asyncio.Task | None = None
         interval = int(entry.options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL))
         super().__init__(
             hass,
@@ -52,7 +60,16 @@ class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
         except ResideoError as err:
             raise UpdateFailed(str(err)) from err
 
-    async def async_command(self, command: Coroutine[Any, Any, None]) -> None:
+    async def async_command(
+        self,
+        command: Coroutine[Any, Any, None],
+        confirmed: Callable[[dict[str, Thermostat]], bool] | None = None,
+    ) -> None:
+        """Send a command, then read back until the server reports it.
+
+        confirmed says whether polled data shows the command's result; without
+        it every READ_BACK_DELAYS read-back is made.
+        """
         try:
             await command
         except AuthenticationError as err:
@@ -63,3 +80,20 @@ class ResideoCoordinator(DataUpdateCoordinator[dict[str, Thermostat]]):
             raise HomeAssistantError(str(err)) from err
         # Read back from the server instead of inventing an optimistic state.
         await self.async_request_refresh()
+        if self._read_back:
+            self._read_back.cancel()
+        if confirmed and self.data and confirmed(self.data):
+            return
+        if self.config_entry:
+            self._read_back = self.config_entry.async_create_background_task(
+                self.hass, self._async_read_back(confirmed), f"{NAME} command read-back"
+            )
+
+    async def _async_read_back(
+        self, confirmed: Callable[[dict[str, Thermostat]], bool] | None
+    ) -> None:
+        for delay in READ_BACK_DELAYS:
+            await asyncio.sleep(delay)
+            await self.async_refresh()
+            if confirmed and self.data and confirmed(self.data):
+                return

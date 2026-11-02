@@ -309,3 +309,53 @@ async def test_unload_and_reload_leave_one_set_of_entities(hass, entry, client):
     await hass.async_block_till_done()
     assert water_state(hass).state == "auto"
     assert sensor_state(hass).state == "off"
+
+
+def lagging_server(client, reports_after, **dhw):
+    """The server shows a command's result only from the given update onwards."""
+    calls = 0
+
+    async def update():
+        nonlocal calls
+        calls += 1
+        if calls >= reports_after:
+            client.devices["T6R-parent"].raw["dhwZone"]["dhw"].update(dhw)
+        return client.devices
+
+    client.update.reset_mock()
+    client.update.side_effect = update
+
+
+async def test_lagging_server_is_read_back_until_it_shows_the_command(hass, entry, client):
+    lagging_server(client, 3, status="PermanentHold", dhwState="Off")
+    with patch("custom_components.resideo_native.coordinator.READ_BACK_DELAYS", (0, 0, 0)):
+        await hass.services.async_call(
+            "water_heater", "set_operation_mode",
+            {"entity_id": water_state(hass).entity_id, "operation_mode": "off"},
+            blocking=True,
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert water_state(hass).state == "off"
+    assert client.update.await_count == 3  # the command's read-back, then two more; no more once it shows
+
+
+async def test_read_back_stops_when_the_first_read_shows_the_command(hass, entry, client):
+    lagging_server(client, 1, status="PermanentHold", dhwState="On")
+    with patch("custom_components.resideo_native.coordinator.READ_BACK_DELAYS", (0, 0, 0)):
+        await hass.services.async_call(
+            "water_heater", "turn_on", {"entity_id": water_state(hass).entity_id}, blocking=True
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert water_state(hass).state == "on"
+    assert client.update.await_count == 1
+
+
+async def test_read_back_is_bounded_when_the_server_never_shows_it(hass, entry, client):
+    lagging_server(client, 99, status="PermanentHold", dhwState="Off")
+    with patch("custom_components.resideo_native.coordinator.READ_BACK_DELAYS", (0, 0, 0)):
+        await hass.services.async_call(
+            "water_heater", "turn_off", {"entity_id": water_state(hass).entity_id}, blocking=True
+        )
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert water_state(hass).state == "auto"
+    assert client.update.await_count == 4  # the command's read-back plus three

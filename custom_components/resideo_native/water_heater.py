@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import probatio
@@ -106,7 +107,8 @@ class ResideoHotWater(ScheduleEntityMixin, ResideoHotWaterEntity, WaterHeaterEnt
             await self.async_boost_hot_water()
             return
         await self.coordinator.async_command(
-            self.coordinator.client.set_hot_water_mode(self.device_id, operation_mode)
+            self.coordinator.client.set_hot_water_mode(self.device_id, operation_mode),
+            self._shows(lambda mode: mode == operation_mode),
         )
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -117,10 +119,21 @@ class ResideoHotWater(ScheduleEntityMixin, ResideoHotWaterEntity, WaterHeaterEnt
 
     async def async_boost_hot_water(self, duration: int = 30) -> None:
         await self.coordinator.async_command(
-            self.coordinator.client.boost_hot_water(self.device_id, duration)
+            self.coordinator.client.boost_hot_water(self.device_id, duration),
+            self._shows(lambda mode: mode == "boost"),
         )
 
     async def async_cancel_hot_water_boost(self) -> None:
         await self.coordinator.async_command(
-            self.coordinator.client.cancel_hot_water_boost(self.device_id)
+            self.coordinator.client.cancel_hot_water_boost(self.device_id),
+            self._shows(lambda mode: mode != "boost"),
         )
+
+    def _shows(self, want: Callable[[str | None], bool]):
+        """Whether polled data shows this zone in the wanted operating mode."""
+
+        def confirmed(data: dict[str, Any]) -> bool:
+            device = data.get(self.device_id)
+            return bool(device and device.hot_water and want(device.hot_water.operation_mode))
+
+        return confirmed
